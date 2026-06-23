@@ -118,15 +118,15 @@ class QdrantDatabaseClient:
                 )
             )
             
-        search_result = self.client.search(
+        query_result = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=models.Filter(must=filter_conditions),
             limit=top_k
         )
         
         results = []
-        for hit in search_result:
+        for hit in query_result.points:
             results.append({
                 "id": hit.id,
                 "score": hit.score,

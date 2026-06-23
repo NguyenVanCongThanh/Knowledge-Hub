@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from typing import List, Dict, Any
 from app.config import settings
 from app.database.qdrant_client import qdrant_db
@@ -72,7 +73,11 @@ class IndexerService:
                     )
             elif parsed["type"] == "document":
                 for idx, chunk in enumerate(parsed["chunks"]):
-                    chunk_id = f"{rel_path}#chunk{idx}"
+                    # Sinh UUID v5 hợp lệ cho point id của Qdrant
+                    namespace = uuid.NAMESPACE_URL
+                    name_key = f"{project_name}:{rel_path}:chunk:{idx}"
+                    chunk_id = str(uuid.uuid5(namespace, name_key))
+                    
                     heading = chunk.get("heading", f"Section {idx}")
                     neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
                     chunk["id"] = chunk_id  # Gán ID phục vụ vector mapping
@@ -184,7 +189,11 @@ class IndexerService:
                     )
             elif parsed["type"] == "document":
                 for idx, chunk in enumerate(parsed["chunks"]):
-                    chunk_id = f"{rel_path}#chunk{idx}"
+                    # Sinh UUID v5 hợp lệ cho point id của Qdrant
+                    namespace = uuid.NAMESPACE_URL
+                    name_key = f"{project_name}:{rel_path}:chunk:{idx}"
+                    chunk_id = str(uuid.uuid5(namespace, name_key))
+                    
                     heading = chunk.get("heading", f"Section {idx}")
                     neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
                     chunk["id"] = chunk_id
