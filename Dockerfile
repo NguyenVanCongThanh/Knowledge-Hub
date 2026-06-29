@@ -8,6 +8,11 @@ FROM ghcr.io/astral-sh/uv:latest AS uv_bin
 # ==========================================
 FROM python:3.10-slim
 
+# Cài đặt các công cụ hệ thống cần thiết (git)
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy công cụ uv trực tiếp vào thư mục bin của hệ thống (đã có sẵn trong PATH)

@@ -26,9 +26,20 @@ class Settings:
     )
     
     # Groq API settings
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL_NAME: str = os.getenv("GROQ_MODEL_NAME", "llama3-70b-8192")
     LLM_EXTRACTION_CONCURRENCY: int = int(os.getenv("LLM_EXTRACTION_CONCURRENCY", "3"))
+    
+    # Hỗ trợ xoay vòng nhiều Groq API keys qua biến duy nhất
+    GROQ_API_KEY_RAW: str = os.getenv("GROQ_API_KEY", "")
+    
+    @property
+    def GROQ_API_KEYS(self) -> list:
+        if not self.GROQ_API_KEY_RAW:
+            return []
+        # Nếu chuỗi chứa dấu phẩy, tách thành list nhiều keys, ngược lại là 1 key
+        if "," in self.GROQ_API_KEY_RAW:
+            return [k.strip() for k in self.GROQ_API_KEY_RAW.split(",") if k.strip()]
+        return [self.GROQ_API_KEY_RAW.strip()]
     
     def __init__(self):
         os.makedirs(self.METADATA_DIR, exist_ok=True)

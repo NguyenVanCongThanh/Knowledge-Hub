@@ -13,3 +13,8 @@ env/
 .idea/
 .vscode/
 .DS_Store
+
+# Environment variables & secrets
+.env
+.env.*
+

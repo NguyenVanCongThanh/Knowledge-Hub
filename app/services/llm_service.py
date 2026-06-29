@@ -1,39 +1,68 @@
 import httpx
 import json
 import asyncio
+import time
 from typing import Dict, Any, List
 from app.config import settings
 
 class LLMService:
     def __init__(self):
-        self.api_key = settings.GROQ_API_KEY
+        self.api_keys = settings.GROQ_API_KEYS
         self.model = settings.GROQ_MODEL_NAME
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
+        self._key_index = 0
+        self._cooldown_until = {}  # {key: timestamp}
+        self._lock = asyncio.Lock()  # Safely rotate keys
+
+    def _get_next_api_key(self) -> str:
+        """Gets the next available API key, taking cooldowns into account."""
+        if not self.api_keys:
+            return ""
+
+        now = time.time()
+        for _ in range(len(self.api_keys)):
+            key = self.api_keys[self._key_index]
+            self._key_index = (self._key_index + 1) % len(self.api_keys)
+            
+            if self._cooldown_until.get(key, 0) < now:
+                return key
+                
+        # If all keys are in cooldown, pick the one that clears soonest
+        best_key = min(self.api_keys, key=lambda k: self._cooldown_until.get(k, 0))
+        return best_key
+
+    def _cooldown_key(self, key: str, duration: float = 30.0):
+        """Puts a key into cooldown due to rate limits."""
+        self._cooldown_until[key] = time.time() + duration
+        print(f"Key {key[:12]}... is cooling down for {duration} seconds.")
 
     async def call_groq_json(self, system_prompt: str, user_prompt: str, retries: int = 5, initial_backoff: float = 2.0) -> Dict[str, Any]:
-        """Calls Groq API and expects a JSON response, with exponential backoff on rate limits."""
-        if not self.api_key:
-            # Fallback mock/empty if key is not configured to prevent crashes
-            print("Warning: GROQ_API_KEY is not configured. Returning empty extraction graph.")
-            return {"entities": [], "relationships": []}
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.1
-        }
-
+        """Calls Groq API and expects a JSON response, with key rotation and exponential backoff."""
         backoff = initial_backoff
         for attempt in range(retries):
+            # Select the next key for this attempt
+            async with self._lock:
+                api_key = self._get_next_api_key()
+
+            if not api_key:
+                print("Warning: No GROQ API key is configured. Returning empty extraction graph.")
+                return {"entities": [], "relationships": []}
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1
+            }
+
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(self.api_url, headers=headers, json=payload)
@@ -41,13 +70,21 @@ class LLMService:
                     if response.status_code == 200:
                         data = response.json()
                         content = data["choices"][0]["message"]["content"]
+                        
+                        # In lượng token đã sử dụng ra terminal
+                        usage = data.get("usage", {})
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", 0)
+                        print(f"🔑 [Key: {api_key[:12]}...] model: {self.model} | Prompt: {prompt_tokens} tkn | Completion: {completion_tokens} tkn | Total: {total_tokens} tkn")
+                        
                         return json.loads(content)
                     
                     elif response.status_code == 429:
-                        # Rate limit hit, backoff and retry
-                        print(f"Groq API Rate Limit (429) hit. Attempt {attempt + 1}/{retries}. Retrying in {backoff}s...")
-                        await asyncio.sleep(backoff)
-                        backoff *= 2.0
+                        # Rate limit hit: put key to cooldown and try next key
+                        self._cooldown_key(api_key, duration=30.0)
+                        print(f"Groq API Rate Limit (429) hit on key {api_key[:12]}... Attempt {attempt + 1}/{retries}. Retrying with another key...")
+                        await asyncio.sleep(1.0)
                     else:
                         print(f"Groq API error HTTP {response.status_code}: {response.text}")
                         await asyncio.sleep(backoff)

@@ -60,8 +60,9 @@ class GitService:
         # Quét tất cả file hiện tại trong thư mục
         current_files = {}
         for root, dirs, files in os.walk(project_path):
-            # Bỏ qua các thư mục đặc biệt
-            if any(part in root.split(os.sep) for part in [".git", "__pycache__", "node_modules", "data", "venv", ".idea"]):
+            # Bỏ qua các thư mục đặc biệt dựa trên đường dẫn tương đối của dự án
+            rel_root = os.path.relpath(root, project_path)
+            if any(part in rel_root.split(os.sep) for part in [".git", "__pycache__", "node_modules", "data", "venv", ".idea"]):
                 continue
             for file in files:
                 # Chỉ xử lý các đuôi file quan trọng
