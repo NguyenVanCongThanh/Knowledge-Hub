@@ -41,9 +41,28 @@ services:
       - EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
       - METADATA_DIR=/data/metadata
       - GITHUB_REPOS_DIR=/data/github_repos
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgrespassword}
+      - POSTGRES_DB=knowledge_hub
     depends_on:
       - qdrant
       - neo4j
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: knowledge-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgrespassword}
+      - POSTGRES_DB=knowledge_hub
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
@@ -51,3 +70,5 @@ volumes:
   neo4j_data:
   neo4j_logs:
   knowledge_data:
+  postgres_data:
+

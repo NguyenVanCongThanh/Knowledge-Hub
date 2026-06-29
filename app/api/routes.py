@@ -9,8 +9,11 @@ from app.api.schemas import (
 from app.services.indexer_service import indexer_service
 from app.services.retrieval_service import retrieval_service
 from app.database.neo4j_client import neo4j_db
+from app.api.groq_routes import router as groq_router
 
 router = APIRouter()
+router.include_router(groq_router)
+
 
 @router.post("/ingest", response_model=IngestResponse, summary="Nạp dữ liệu toàn bộ project")
 async def ingest_project(payload: IngestRequest):

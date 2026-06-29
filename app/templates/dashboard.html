@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Groq Key & Token Usage Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617'
+                        },
+                        brand: {
+                            purple: '#8b5cf6',
+                            blue: '#3b82f6',
+                            cyan: '#06b6d4',
+                            emerald: '#10b981'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #020617;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px rgba(255, 255, 255, 0.05) solid;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <nav class="glass-panel sticky top-0 z-40 border-b border-slate-800/80 px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-gradient-to-tr from-brand-purple to-brand-blue rounded-xl shadow-lg shadow-brand-purple/20">
+                <i class="fa-solid fa-server text-xl text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-semibold tracking-wide bg-gradient-to-r from-white via-slate-200 to-brand-cyan bg-clip-text text-transparent">SDLC Knowledge Hub</h1>
+                <p class="text-xs text-slate-400">Groq Gateway & Usage Monitor</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                System Connected
+            </span>
+            <a href="/docs" target="_blank" class="text-xs text-slate-400 hover:text-white transition-colors duration-200">
+                <i class="fa-solid fa-book mr-1.5"></i>API Docs
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+        
+        <!-- Stats Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <!-- Card 1 -->
+            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
+                <div class="space-y-1">
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Tổng số Keys</span>
+                    <h3 id="stat-total-keys" class="text-3xl font-bold tracking-tight">0</h3>
+                </div>
+                <div class="p-3 bg-brand-purple/10 text-brand-purple rounded-xl">
+                    <i class="fa-solid fa-key text-xl"></i>
+                </div>
+            </div>
+            <!-- Card 2 -->
+            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
+                <div class="space-y-1">
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Keys Đang Hoạt Động</span>
+                    <h3 id="stat-active-keys" class="text-3xl font-bold tracking-tight text-emerald-400">0</h3>
+                </div>
+                <div class="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                    <i class="fa-solid fa-circle-check text-xl"></i>
+                </div>
+            </div>
+            <!-- Card 3 -->
+            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
+                <div class="space-y-1">
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Lượng Token Đã Dùng</span>
+                    <h3 id="stat-total-tokens" class="text-3xl font-bold tracking-tight text-brand-blue">0</h3>
+                </div>
+                <div class="p-3 bg-brand-blue/10 text-brand-blue rounded-xl">
+                    <i class="fa-solid fa-chart-simple text-xl"></i>
+                </div>
+            </div>
+            <!-- Card 4 -->
+            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
+                <div class="space-y-1">
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Chi Phí Tích Lũy</span>
+                    <h3 id="stat-total-cost" class="text-3xl font-bold tracking-tight text-brand-cyan">$0.0000</h3>
+                </div>
+                <div class="p-3 bg-brand-cyan/10 text-brand-cyan rounded-xl">
+                    <i class="fa-solid fa-dollar-sign text-xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Token Usage History Chart -->
+            <div class="glass-panel p-5 rounded-2xl lg:col-span-2 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-base font-semibold tracking-wide text-slate-200">Xu hướng sử dụng Token (7 ngày qua)</h2>
+                    <span class="text-xs text-slate-400"><i class="fa-regular fa-clock mr-1"></i>Cập nhật thời gian thực</span>
+                </div>
+                <div class="h-64 relative">
+                    <canvas id="tokenHistoryChart"></canvas>
+                </div>
+            </div>
+            <!-- Model Distribution Chart -->
+            <div class="glass-panel p-5 rounded-2xl space-y-4">
+                <h2 class="text-base font-semibold tracking-wide text-slate-200">Phân bổ Chi phí theo Model</h2>
+                <div class="h-64 relative flex items-center justify-center">
+                    <canvas id="modelPriceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Management Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Keys Management Table -->
+            <div class="glass-panel p-5 rounded-2xl lg:col-span-2 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-base font-semibold text-slate-200">Quản lý API Keys</h2>
+                    <button onclick="toggleAddModal(true)" class="px-3.5 py-2 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-brand-purple/20 transition-all duration-200">
+                        <i class="fa-solid fa-plus text-xs"></i> Thêm Key Mới
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800/80 text-xs text-slate-400 uppercase tracking-wider">
+                                <th class="py-3 px-4">Tên gợi nhớ</th>
+                                <th class="py-3 px-4">API Key</th>
+                                <th class="py-3 px-4">Trạng thái</th>
+                                <th class="py-3 px-4 text-right">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="keys-table-body" class="text-sm divide-y divide-slate-800/40">
+                            <!-- JS loaded keys here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Side column - Model Rates Reference -->
+            <div class="glass-panel p-5 rounded-2xl space-y-4">
+                <h2 class="text-base font-semibold text-slate-200">Bảng giá Model Groq (Tham khảo)</h2>
+                <div class="text-xs text-slate-400 pb-2">Đơn giá áp dụng cho 1,000,000 Tokens (USD)</div>
+                <div class="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
+                        <div>
+                            <div class="font-medium text-slate-300">llama3-70b-8192</div>
+                            <div class="text-[10px] text-slate-500">Mô hình tiêu chuẩn cao</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-slate-300 font-semibold">$0.59 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
+                            <div class="text-slate-400 font-semibold">$0.79 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
+                        <div>
+                            <div class="font-medium text-slate-300">llama3-8b-8192</div>
+                            <div class="text-[10px] text-slate-500">Tốc độ siêu nhanh, nhẹ</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-slate-300 font-semibold">$0.05 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
+                            <div class="text-slate-400 font-semibold">$0.08 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
+                        <div>
+                            <div class="font-medium text-slate-300">mixtral-8x7b-32768</div>
+                            <div class="text-[10px] text-slate-500">Cửa sổ ngữ cảnh rộng</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-slate-300 font-semibold">$0.24 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
+                            <div class="text-slate-400 font-semibold">$0.24 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Logs Table -->
+        <div class="glass-panel p-5 rounded-2xl space-y-4">
+            <h2 class="text-base font-semibold text-slate-200">Nhật ký cuộc gọi API gần đây</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800/80 text-xs text-slate-400 uppercase tracking-wider">
+                            <th class="py-3 px-4">Thời gian</th>
+                            <th class="py-3 px-4">Key sử dụng</th>
+                            <th class="py-3 px-4">Model</th>
+                            <th class="py-3 px-4">Prompt Tokens</th>
+                            <th class="py-3 px-4">Completion Tokens</th>
+                            <th class="py-3 px-4">Tổng Tokens</th>
+                            <th class="py-3 px-4 text-right">Ước tính Chi Phí</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-table-body" class="text-sm divide-y divide-slate-800/40">
+                        <!-- JS loaded logs here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-auto border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 glass-panel">
+        <p>© 2026 SDLC Knowledge Hub • Hệ thống quản lý Groq & Token sử dụng tích hợp</p>
+    </footer>
+
+    <!-- Add Key Modal -->
+    <div id="add-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden z-50 transition-all duration-300">
+        <div class="glass-panel max-w-md w-full p-6 rounded-2xl space-y-5 shadow-2xl border border-slate-800 animate-in fade-in zoom-in duration-200">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-plus-circle text-brand-purple"></i> Thêm Groq API Key
+                </h3>
+                <button onclick="toggleAddModal(false)" class="text-slate-400 hover:text-white transition-colors duration-150">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="add-key-form" class="space-y-4" onsubmit="submitNewKey(event)">
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold text-slate-400" for="key-name">Tên Gợi Nhớ</label>
+                    <input type="text" id="key-name" required placeholder="Ví dụ: Key Dự Án Chatbot chính" class="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-purple text-slate-200">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold text-slate-400" for="api-key-val">Groq API Key</label>
+                    <input type="password" id="api-key-val" required placeholder="gsk_xxxxxxxxxxxxxxxxxxxx" class="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-purple text-slate-200">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="toggleAddModal(false)" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 transition-colors text-xs font-semibold rounded-xl text-slate-300">Hủy</button>
+                    <button type="submit" class="px-4 py-2 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 transition-opacity text-xs font-semibold rounded-xl text-white">Lưu Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        let historyChart = null;
+        let priceChart = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDashboardData();
+            // Refresh auto data every 10 seconds
+            setInterval(loadDashboardData, 10000);
+        });
+
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/groq/usage/summary');
+                const data = await response.json();
+                
+                // Cập nhật thẻ thống kê
+                document.getElementById('stat-total-keys').innerText = data.total_keys;
+                document.getElementById('stat-active-keys').innerText = data.active_keys;
+                document.getElementById('stat-total-tokens').innerText = data.total_tokens.toLocaleString();
+                document.getElementById('stat-total-cost').innerText = '$' + data.total_cost.toFixed(4);
+
+                // Cập nhật biểu đồ lịch sử sử dụng
+                renderHistoryChart(data.daily_usage);
+                
+                // Cập nhật biểu đồ phân bổ model
+                renderModelChart(data.model_usage);
+
+                // Cập nhật bảng Key
+                loadKeysTable();
+
+                // Cập nhật bảng Log
+                renderLogsTable(data.recent_logs);
+
+            } catch (error) {
+                console.error("Lỗi khi tải dữ liệu dashboard: ", error);
+            }
+        }
+
+        async function loadKeysTable() {
+            try {
+                const response = await fetch('/api/groq/keys');
+                const keys = await response.json();
+                const tbody = document.getElementById('keys-table-body');
+                tbody.innerHTML = '';
+                
+                if (keys.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="py-8 text-center text-slate-500">Chưa có API Key nào được thêm. Hãy nhấn Thêm Key Mới!</td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                keys.forEach(k => {
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-900/10 transition-colors";
+                    
+                    let badgeClass = "bg-brand-blue/10 text-brand-blue border border-brand-blue/20";
+                    if (k.status === 'active') badgeClass = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                    if (k.status === 'rate_limited') badgeClass = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                    if (k.status === 'inactive') badgeClass = "bg-slate-800 text-slate-400 border border-slate-700";
+
+                    tr.innerHTML = `
+                        <td class="py-4 px-4 font-semibold text-slate-200">${k.name}</td>
+                        <td class="py-4 px-4 font-mono text-xs text-slate-400">${k.api_key}</td>
+                        <td class="py-4 px-4">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}">
+                                ${k.status}
+                            </span>
+                        </td>
+                        <td class="py-4 px-4 text-right space-x-2">
+                            <button onclick="toggleKeyStatus(${k.id}, '${k.status === 'active' ? 'inactive' : 'active'}')" class="text-xs px-2.5 py-1.5 ${k.status === 'active' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'} rounded-lg transition-colors font-medium">
+                                ${k.status === 'active' ? 'Vô hiệu hóa' : 'Kích hoạt'}
+                            </button>
+                            <button onclick="deleteKey(${k.id})" class="text-xs px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors font-medium">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error("Lỗi khi tải bảng keys: ", error);
+            }
+        }
+
+        function renderLogsTable(logs) {
+            const tbody = document.getElementById('logs-table-body');
+            tbody.innerHTML = '';
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="py-8 text-center text-slate-500">Chưa có hoạt động gọi API nào được ghi nhận.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            logs.forEach(l => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-900/10 transition-colors";
+                const dateStr = new Date(l.timestamp).toLocaleString('vi-VN');
+                
+                tr.innerHTML = `
+                    <td class="py-3 px-4 text-slate-400 text-xs">${dateStr}</td>
+                    <td class="py-3 px-4 font-medium text-slate-300">${l.key_name}</td>
+                    <td class="py-3 px-4 font-mono text-xs text-brand-purple">${l.model}</td>
+                    <td class="py-3 px-4 text-slate-300">${l.prompt_tokens.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-slate-300">${l.completion_tokens.toLocaleString()}</td>
+                    <td class="py-3 px-4 font-semibold text-slate-200">${l.total_tokens.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right font-bold text-brand-cyan">$${l.estimated_cost.toFixed(6)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function toggleAddModal(show) {
+            const modal = document.getElementById('add-modal');
+            if (show) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+                document.getElementById('add-key-form').reset();
+            }
+        }
+
+        async function submitNewKey(event) {
+            event.preventDefault();
+            const name = document.getElementById('key-name').value;
+            const api_key = document.getElementById('api-key-val').value;
+
+            try {
+                const response = await fetch('/api/groq/keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, api_key })
+                });
+
+                if (response.ok) {
+                    toggleAddModal(false);
+                    loadDashboardData();
+                } else {
+                    const err = await response.json();
+                    alert("Lỗi: " + err.detail);
+                }
+            } catch (error) {
+                alert("Lỗi kết nối server");
+            }
+        }
+
+        async function toggleKeyStatus(id, newStatus) {
+            try {
+                const response = await fetch(`/api/groq/keys/${id}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                if (response.ok) {
+                    loadDashboardData();
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function deleteKey(id) {
+            if (!confirm("Bạn có chắc chắn muốn xóa API Key này không?")) return;
+            try {
+                const response = await fetch(`/api/groq/keys/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    loadDashboardData();
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function renderHistoryChart(dailyData) {
+            const ctx = document.getElementById('tokenHistoryChart').getContext('2d');
+            const labels = dailyData.map(d => d.date);
+            const dataTokens = dailyData.map(d => d.tokens);
+            
+            if (historyChart) {
+                historyChart.destroy();
+            }
+
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Tokens tiêu thụ',
+                        data: dataTokens,
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.35,
+                        pointBackgroundColor: '#8b5cf6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderModelChart(modelUsage) {
+            const ctx = document.getElementById('modelPriceChart').getContext('2d');
+            
+            if (priceChart) {
+                priceChart.destroy();
+            }
+
+            if (modelUsage.length === 0) {
+                // Hiển thị đồ thị rỗng khi chưa có data
+                priceChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Chưa có dữ liệu'],
+                        datasets: [{
+                            data: [1],
+                            backgroundColor: ['#1e293b'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } }
+                    }
+                });
+                return;
+            }
+
+            const labels = modelUsage.map(m => m.model);
+            const costs = modelUsage.map(m => m.cost);
+
+            priceChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: costs,
+                        backgroundColor: ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899'],
+                        borderWidth: 1,
+                        borderColor: 'rgba(15, 23, 42, 0.65)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 10 },
+                                boxWidth: 12
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

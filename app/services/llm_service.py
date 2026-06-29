@@ -4,32 +4,14 @@ import asyncio
 import time
 from typing import Dict, Any, List
 from app.config import settings
+from app.services.groq_manager import groq_manager
 
 class LLMService:
     def __init__(self):
-        self.api_keys = settings.GROQ_API_KEYS
         self.model = settings.GROQ_MODEL_NAME
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self._key_index = 0
         self._cooldown_until = {}  # {key: timestamp}
-        self._lock = asyncio.Lock()  # Safely rotate keys
-
-    def _get_next_api_key(self) -> str:
-        """Gets the next available API key, taking cooldowns into account."""
-        if not self.api_keys:
-            return ""
-
-        now = time.time()
-        for _ in range(len(self.api_keys)):
-            key = self.api_keys[self._key_index]
-            self._key_index = (self._key_index + 1) % len(self.api_keys)
-            
-            if self._cooldown_until.get(key, 0) < now:
-                return key
-                
-        # If all keys are in cooldown, pick the one that clears soonest
-        best_key = min(self.api_keys, key=lambda k: self._cooldown_until.get(k, 0))
-        return best_key
+        self._lock = asyncio.Lock()
 
     def _cooldown_key(self, key: str, duration: float = 30.0):
         """Puts a key into cooldown due to rate limits."""
@@ -40,12 +22,27 @@ class LLMService:
         """Calls Groq API and expects a JSON response, with key rotation and exponential backoff."""
         backoff = initial_backoff
         for attempt in range(retries):
-            # Select the next key for this attempt
+            # Lấy key năng động từ SQLite
             async with self._lock:
-                api_key = self._get_next_api_key()
+                # Xoay vòng key và lọc ra các key đang cooldown
+                now = time.time()
+                key_id, api_key = None, ""
+                
+                # Gọi manager lấy key
+                key_id, api_key = groq_manager.get_active_key()
+                
+                # Nếu key được chọn đang trong thời gian cooldown, tiếp tục tìm key dự phòng trong .env
+                if api_key in self._cooldown_until and self._cooldown_until[api_key] > now:
+                    # Nếu key chính từ DB bị cooldown, thử fallback về các key trong .env khác
+                    env_keys = settings.GROQ_API_KEYS
+                    for ek in env_keys:
+                        if ek not in self._cooldown_until or self._cooldown_until[ek] <= now:
+                            api_key = ek
+                            key_id = None
+                            break
 
             if not api_key:
-                print("Warning: No GROQ API key is configured. Returning empty extraction graph.")
+                print("Warning: No GROQ API key is configured or all keys are in cooldown. Returning empty extraction graph.")
                 return {"entities": [], "relationships": []}
 
             headers = {
@@ -71,18 +68,24 @@ class LLMService:
                         data = response.json()
                         content = data["choices"][0]["message"]["content"]
                         
-                        # In lượng token đã sử dụng ra terminal
+                        # Trích xuất và lưu log token sử dụng
                         usage = data.get("usage", {})
                         prompt_tokens = usage.get("prompt_tokens", 0)
                         completion_tokens = usage.get("completion_tokens", 0)
                         total_tokens = usage.get("total_tokens", 0)
+                        
+                        # Ghi nhận log token vào Database
+                        groq_manager.log_usage(key_id, self.model, prompt_tokens, completion_tokens)
+                        
                         print(f"🔑 [Key: {api_key[:12]}...] model: {self.model} | Prompt: {prompt_tokens} tkn | Completion: {completion_tokens} tkn | Total: {total_tokens} tkn")
                         
                         return json.loads(content)
                     
                     elif response.status_code == 429:
-                        # Rate limit hit: put key to cooldown and try next key
+                        # Rate limit hit: đưa key vào trạng thái cooldown và rate_limited
                         self._cooldown_key(api_key, duration=30.0)
+                        if key_id is not None:
+                            groq_manager.update_key_status(key_id, "rate_limited")
                         print(f"Groq API Rate Limit (429) hit on key {api_key[:12]}... Attempt {attempt + 1}/{retries}. Retrying with another key...")
                         await asyncio.sleep(1.0)
                     else:
@@ -95,6 +98,7 @@ class LLMService:
                 backoff *= 2.0
 
         raise Exception("Failed to call Groq API after multiple retries.")
+
 
     async def extract_knowledge(self, content_chunk: str, chunk_type: str, file_path: str) -> Dict[str, Any]:
         """Extracts nodes and relationships from a text chunk of document/code."""
