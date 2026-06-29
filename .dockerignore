@@ -1,0 +1,22 @@
+# Version Control
+.git
+.gitignore
+.github
+
+# Databases & Local Storage
+data/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE & OS settings
+.idea/
+.vscode/
+.DS_Store
+*.log

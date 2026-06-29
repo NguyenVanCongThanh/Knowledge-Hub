@@ -1,25 +1,34 @@
-FROM python:3.10-slim
+# ==========================================
+# STAGE 1: Copy uv binary
+# ==========================================
+FROM ghcr.io/astral-sh/uv:latest AS uv_bin
 
-# Cài đặt git và build tools cơ bản
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# ==========================================
+# STAGE 2: Final Runtime
+# ==========================================
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# Copy requirements và cài đặt python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy công cụ uv trực tiếp vào thư mục bin của hệ thống (đã có sẵn trong PATH)
+COPY --from=uv_bin /uv /usr/local/bin/uv
 
-# Download trước embedding model để chạy offline khi start container
+# Thiết lập biến môi trường để uv tự động cài đặt vào system Python (không cần venv trong container)
+ENV UV_SYSTEM_PYTHON=1
+
+# Copy danh sách dependency
+COPY requirements.txt .
+
+# Sử dụng cache mount của uv (mặc định tại /root/.cache/uv) để cài đặt siêu tốc
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r requirements.txt
+
+# Tải trước model embedding và đóng gói vào image (đảm bảo chạy offline ổn định)
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
-# Copy source code ứng dụng
+# Copy mã nguồn ứng dụng
 COPY . .
 
-# Mở cổng API
 EXPOSE 8000
 
-# Khởi chạy ứng dụng
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

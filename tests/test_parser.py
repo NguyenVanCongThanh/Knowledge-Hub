@@ -1,15 +1,62 @@
 import os
+import tempfile
 import pytest
 from app.services.parser_service import parser_service
 
-def test_parse_python_code():
-    # Setup đường dẫn tới file calculator mẫu
-    current_dir = os.path.dirname(__file__)
-    calc_path = os.path.abspath(os.path.join(current_dir, "..", "demo_sample", "src", "calculator.py"))
+@pytest.fixture
+def temp_python_file():
+    code_content = """class Calculator:
+    def log_operation(self, op, result):
+        print(f"{op}: {result}")
+
+    def add(self, a, b):
+        res = a + b
+        self.log_operation("add", res)
+        return res
+
+    def subtract(self, a, b):
+        res = a - b
+        self.log_operation("subtract", res)
+        return res
+"""
+    # Tạo file python tạm thời
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(code_content)
+        temp_path = f.name
+        
+    yield temp_path
     
-    assert os.path.exists(calc_path), f"File {calc_path} does not exist"
+    # Dọn dẹp sau khi test xong
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+@pytest.fixture
+def temp_markdown_file():
+    md_content = """# Calculator Project Specification
+
+This is a simple calculator project.
+
+## Addition Feature
+
+Provides addition capabilities.
+
+## Subtraction Feature
+
+Provides subtraction capabilities.
+"""
+    # Tạo file markdown tạm thời
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(md_content)
+        temp_path = f.name
+        
+    yield temp_path
     
-    result = parser_service.parse_file(calc_path)
+    # Dọn dẹp sau khi test xong
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+def test_parse_python_code(temp_python_file):
+    result = parser_service.parse_file(temp_python_file)
     
     assert result["type"] == "code"
     
@@ -28,13 +75,8 @@ def test_parse_python_code():
     assert ("add", "log_operation") in calls
     assert ("subtract", "log_operation") in calls
 
-def test_parse_markdown_docs():
-    current_dir = os.path.dirname(__file__)
-    spec_path = os.path.abspath(os.path.join(current_dir, "..", "demo_sample", "docs", "specification.md"))
-    
-    assert os.path.exists(spec_path), f"File {spec_path} does not exist"
-    
-    result = parser_service.parse_file(spec_path)
+def test_parse_markdown_docs(temp_markdown_file):
+    result = parser_service.parse_file(temp_markdown_file)
     
     assert result["type"] == "document"
     assert len(result["chunks"]) >= 3

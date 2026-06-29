@@ -5,6 +5,12 @@ class IngestRequest(BaseModel):
     project_name: str = Field(..., json_schema_extra={"example": "bookstore"}, description="Tên định danh dự án")
     path: str = Field(..., json_schema_extra={"example": "/data/bookstore"}, description="Đường dẫn tuyệt đối đến thư mục dự án")
 
+class GithubIngestRequest(BaseModel):
+    project_name: str = Field(..., json_schema_extra={"example": "bookstore-github"}, description="Tên định danh dự án")
+    github_url: str = Field(..., json_schema_extra={"example": "https://github.com/owner/repo"}, description="Đường dẫn URL của repository trên GitHub")
+    branch: Optional[str] = Field("main", json_schema_extra={"example": "main"}, description="Tên branch cần nạp")
+    token: Optional[str] = Field(None, json_schema_extra={"example": "ghp_xxxx"}, description="GitHub Personal Access Token nếu là private repository")
+
 class IngestResponse(BaseModel):
     project_name: str
     status: str

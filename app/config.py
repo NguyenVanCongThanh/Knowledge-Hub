@@ -16,9 +16,22 @@ class Settings:
     EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
     
     # Storage settings
-    METADATA_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "metadata"))
+    METADATA_DIR: str = os.getenv(
+        "METADATA_DIR",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "metadata"))
+    )
+    GITHUB_REPOS_DIR: str = os.getenv(
+        "GITHUB_REPOS_DIR",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "github_repos"))
+    )
+    
+    # Groq API settings
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL_NAME: str = os.getenv("GROQ_MODEL_NAME", "llama3-70b-8192")
+    LLM_EXTRACTION_CONCURRENCY: int = int(os.getenv("LLM_EXTRACTION_CONCURRENCY", "3"))
     
     def __init__(self):
         os.makedirs(self.METADATA_DIR, exist_ok=True)
+        os.makedirs(self.GITHUB_REPOS_DIR, exist_ok=True)
 
 settings = Settings()

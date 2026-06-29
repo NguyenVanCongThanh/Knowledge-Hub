@@ -195,5 +195,66 @@ class Neo4jDatabaseClient:
                 })
             return neighbors
 
+    def create_extracted_entity(self, project_name: str, label: str, name: str, properties: Dict[str, Any]):
+        """Tạo thực thể động được trích xuất bởi LLM"""
+        # Đảm bảo label hợp lệ
+        valid_labels = {"Concept", "Component", "Technology", "Artifact", "DocumentChunk", "Class", "Function", "File"}
+        if label not in valid_labels:
+            label = "Concept"
+            
+        query = f"""
+        MERGE (e:{label} {{name: $name, project: $project_name}})
+        ON CREATE SET e.created_by = 'LLM', e.created_at = timestamp()
+        ON MATCH SET e.updated_at = timestamp()
+        """
+        for key in properties.keys():
+            if key not in ["name", "project"]:
+                query += f"\nSET e.{key} = ${key}"
+                
+        with self.driver.session() as session:
+            session.run(query, project_name=project_name, name=name, **properties)
+
+    def create_extracted_relationship(
+        self, 
+        project_name: str, 
+        source_name: str, 
+        source_label: str, 
+        target_name: str, 
+        target_label: str, 
+        rel_type: str, 
+        properties: Dict[str, Any]
+    ):
+        """Tạo quan hệ động được trích xuất bởi LLM"""
+        valid_labels = {"Concept", "Component", "Technology", "Artifact", "DocumentChunk", "Class", "Function", "File"}
+        if source_label not in valid_labels:
+            source_label = "Concept"
+        if target_label not in valid_labels:
+            target_label = "Concept"
+            
+        valid_rel_types = {"DEPENDS_ON", "EXPLAINS", "USES", "RELATED_TO", "IMPLEMENTS", "CALLS", "MODIFIED"}
+        if rel_type not in valid_rel_types:
+            rel_type = "RELATED_TO"
+            
+        source_match_key = "id" if source_label == "DocumentChunk" else ("path" if source_label == "File" else "name")
+        target_match_key = "id" if target_label == "DocumentChunk" else ("path" if target_label == "File" else "name")
+
+        query = f"""
+        MATCH (source:{source_label} {{{source_match_key}: $source_name, project: $project_name}})
+        MATCH (target:{target_label} {{{target_match_key}: $target_name, project: $project_name}})
+        MERGE (source)-[r:{rel_type}]->(target)
+        ON CREATE SET r.created_by = 'LLM', r.created_at = timestamp()
+        """
+        for key in properties.keys():
+            query += f"\nSET r.{key} = ${key}"
+            
+        with self.driver.session() as session:
+            session.run(
+                query, 
+                project_name=project_name, 
+                source_name=source_name, 
+                target_name=target_name, 
+                **properties
+            )
+
 # Singleton instance
 neo4j_db = Neo4jDatabaseClient()

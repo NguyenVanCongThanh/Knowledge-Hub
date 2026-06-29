@@ -8,9 +8,10 @@ from app.database.neo4j_client import neo4j_db
 from app.services.parser_service import parser_service
 from app.services.embedding_service import embedding_service
 from app.services.git_service import git_service
+from app.services.extraction_orchestrator import extraction_orchestrator
 
 class IndexerService:
-    def ingest_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
+    async def ingest_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
         """Thực hiện nạp dữ liệu toàn bộ project lần đầu (Full Index)"""
         # 1. Dọn dẹp dữ liệu cũ của project này
         qdrant_db.delete_project_chunks(project_name)
@@ -82,6 +83,10 @@ class IndexerService:
                     neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
                     chunk["id"] = chunk_id  # Gán ID phục vụ vector mapping
             
+            # Trích xuất tri thức bằng LLM (Groq) bất đồng bộ cho file hiện tại
+            if parsed["chunks"]:
+                await extraction_orchestrator.process_project_chunks(project_name, rel_path, parsed["chunks"])
+            
             # Chuẩn bị dữ liệu để sinh vector
             texts = [c["text"] for c in parsed["chunks"]]
             if texts:
@@ -136,7 +141,7 @@ class IndexerService:
             "commits_indexed": len(commits)
         }
 
-    def sync_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
+    async def sync_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
         """Cơ chế cập nhật tri thức tự động (Sync/Eviction)"""
         if not os.path.exists(project_path):
             return {"status": "error", "message": "Project path does not exist"}
@@ -198,6 +203,10 @@ class IndexerService:
                     neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
                     chunk["id"] = chunk_id
             
+            # Trích xuất tri thức bằng LLM (Groq) bất đồng bộ cho file hiện tại
+            if parsed["chunks"]:
+                await extraction_orchestrator.process_project_chunks(project_name, rel_path, parsed["chunks"])
+            
             # Chuẩn bị dữ liệu sinh vector
             texts = [c["text"] for c in parsed["chunks"]]
             if texts:
@@ -250,6 +259,40 @@ class IndexerService:
             "deleted_files": diff["deleted"],
             "new_chunks_count": len(all_chunks_to_upsert)
         }
+
+    async def ingest_github_repo(self, project_name: str, github_url: str, branch: str = "main", token: str = None) -> Dict[str, Any]:
+        """Tải/clone repository từ GitHub và thực hiện ingest_project"""
+        import git
+        import shutil
+        
+        # Tạo đường dẫn lưu trữ cục bộ
+        local_path = os.path.join(settings.GITHUB_REPOS_DIR, project_name)
+        
+        # Chuẩn hóa URL nếu có token
+        clone_url = github_url
+        if token:
+            clean_url = github_url.replace("https://", "").replace("http://", "")
+            clone_url = f"https://{token}@{clean_url}"
+            
+        if os.path.exists(local_path):
+            print(f"Directory {local_path} already exists. Pulling latest changes...")
+            try:
+                repo = git.Repo(local_path)
+                origin = repo.remote(name="origin")
+                origin.set_url(clone_url)
+                
+                repo.git.fetch()
+                repo.git.checkout(branch)
+                origin.pull()
+            except Exception as e:
+                print(f"Error pulling repository: {e}. Re-cloning...")
+                shutil.rmtree(local_path)
+                git.Repo.clone_from(clone_url, local_path, branch=branch)
+        else:
+            print(f"Cloning {github_url} (branch: {branch}) into {local_path}...")
+            git.Repo.clone_from(clone_url, local_path, branch=branch)
+            
+        return await self.ingest_project(project_name, local_path)
 
     def _build_relations(self, project_name: str, parsed_data: Dict[str, Dict[str, Any]]):
         """Xây dựng liên kết CALLS giữa code và IMPLEMENTS giữa code - tài liệu"""

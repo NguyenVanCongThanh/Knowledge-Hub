@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from app.api.schemas import (
     IngestRequest, IngestResponse,
     QueryRequest, QueryResponse,
-    SyncRequest, SyncResponse
+    SyncRequest, SyncResponse,
+    GithubIngestRequest
 )
 from app.services.indexer_service import indexer_service
 from app.services.retrieval_service import retrieval_service
@@ -29,10 +30,23 @@ async def ingest_project(payload: IngestRequest):
             )
             
     try:
-        result = indexer_service.ingest_project(payload.project_name, project_path)
+        result = await indexer_service.ingest_project(payload.project_name, project_path)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi xảy ra trong quá trình nạp dữ liệu: {str(e)}")
+
+@router.post("/ingest/github", response_model=IngestResponse, summary="Nạp dữ liệu từ GitHub repository")
+async def ingest_github_project(payload: GithubIngestRequest):
+    try:
+        result = await indexer_service.ingest_github_repo(
+            project_name=payload.project_name,
+            github_url=payload.github_url,
+            branch=payload.branch,
+            token=payload.token
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xảy ra trong quá trình nạp dữ liệu từ GitHub: {str(e)}")
 
 @router.post("/query", response_model=QueryResponse, summary="AI Agent truy vấn tri thức")
 async def query_knowledge(payload: QueryRequest):
@@ -74,7 +88,7 @@ async def sync_project(payload: SyncRequest):
             raise HTTPException(status_code=400, detail=f"Đường dẫn dự án không tồn tại: {payload.path}")
             
     try:
-        result = indexer_service.sync_project(payload.project_name, project_path)
+        result = await indexer_service.sync_project(payload.project_name, project_path)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi đồng bộ dự án: {str(e)}")
