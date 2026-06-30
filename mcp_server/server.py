@@ -158,4 +158,18 @@ def ingest_github_repo(project_name: str, github_url: str, branch: str = "main",
         return f"Error ingesting GitHub repository: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
+    if transport == "sse":
+        port = int(os.getenv("MCP_PORT", "8012"))
+        host = os.getenv("MCP_HOST", "0.0.0.0")
+        print(f"Starting MCP Server on Streamable HTTP transport at {host}:{port}...", file=sys.stderr)
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="streamable-http")
+    else:
+        print("Starting MCP Server on Stdio transport...", file=sys.stderr)
+        mcp.run(transport="stdio")
+
+
+
+

@@ -1,6 +1,5 @@
 import os
 from fastapi import APIRouter, HTTPException, Query, Body
-from fastapi.responses import HTMLResponse
 from app.services.groq_manager import groq_manager
 from pydantic import BaseModel, Field
 
@@ -12,18 +11,6 @@ class KeyCreateRequest(BaseModel):
 
 class StatusUpdateRequest(BaseModel):
     status: str = Field(..., pattern="^(active|inactive|rate_limited)$", description="Trạng thái mới")
-
-@router.get("/dashboard", response_class=HTMLResponse, summary="Giao diện quản lý Groq API Keys & Usage", include_in_schema=False)
-async def get_dashboard():
-    template_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        "app", "templates", "dashboard.html"
-    )
-    if not os.path.exists(template_path):
-        raise HTTPException(status_code=404, detail="Không tìm thấy file giao diện dashboard.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content)
 
 # Đổi prefix của các API endpoints để chuẩn RESTful
 @router.get("/api/groq/keys", summary="Lấy danh sách API Keys")

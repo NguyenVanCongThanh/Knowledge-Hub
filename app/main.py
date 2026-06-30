@@ -13,11 +13,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error closing Neo4j connection: {e}")
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="SDLC Knowledge Hub API",
     description="Dịch vụ tri thức chuyên biệt làm bộ nhớ dài hạn cho AI Agents trong SDLC.",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# Cấu hình CORS để cho phép Frontend gọi API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Đăng ký các endpoints
