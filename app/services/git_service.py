@@ -50,22 +50,45 @@ class GitService:
     def get_project_diff(self, project_name: str, project_path: str) -> Dict[str, List[str]]:
         """
         Phát hiện sự thay đổi file (thêm, sửa, xóa) trong project.
-        Sử dụng kết hợp giữa file hash (để chạy được với mọi thư mục) và Git.
+        Sử dụng kết hợp giữa file hash (lưu trong PostgreSQL) và Git.
         """
         changes = {"added": [], "modified": [], "deleted": []}
         
-        # Đường dẫn file lưu hash metadata
-        hash_file_path = os.path.join(settings.METADATA_DIR, f"{project_name}_hashes.json")
-        
+        # Thử phân tích thông tin Git (owner, repo, branch, commit) từ project_path
+        owner = None
+        repo_name = None
+        branch = "main"
+        last_commit_sha = None
+        if self.is_git_repo(project_path):
+            try:
+                g_repo = git.Repo(project_path, search_parent_directories=True)
+                try:
+                    branch = g_repo.active_branch.name
+                except Exception:
+                    pass
+                try:
+                    last_commit_sha = g_repo.head.commit.hexsha
+                except Exception:
+                    pass
+                try:
+                    remote_url = g_repo.remotes.origin.url
+                    if "github.com" in remote_url:
+                        parts = remote_url.split("github.com")[-1].strip(":/").replace(".git", "").split("/")
+                        if len(parts) >= 2:
+                            owner = parts[0]
+                            repo_name = parts[1]
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
         # Quét tất cả file hiện tại trong thư mục
         current_files = {}
         for root, dirs, files in os.walk(project_path):
-            # Bỏ qua các thư mục đặc biệt dựa trên đường dẫn tương đối của dự án
             rel_root = os.path.relpath(root, project_path)
             if any(part in rel_root.split(os.sep) for part in [".git", "__pycache__", "node_modules", "data", "venv", ".idea"]):
                 continue
             for file in files:
-                # Chỉ xử lý các đuôi file quan trọng
                 _, ext = os.path.splitext(file)
                 if ext.lower() not in [".py", ".java", ".cs", ".js", ".ts", ".md", ".pdf", ".txt"]:
                     continue
@@ -73,38 +96,85 @@ class GitService:
                 abs_path = os.path.join(root, file)
                 rel_path = os.path.relpath(abs_path, project_path)
                 try:
-                    current_files[rel_path] = self._calculate_file_hash(abs_path)
+                    current_files[rel_path] = {
+                        "hash": self._calculate_file_hash(abs_path),
+                        "size": os.path.getsize(abs_path)
+                    }
                 except Exception as e:
-                    print(f"Error calculating hash for {abs_path}: {e}")
+                    print(f"Error calculating hash/size for {abs_path}: {e}")
 
-        # Đọc hash đã lưu trước đó
+        # Đọc hash đã lưu trước đó từ PostgreSQL
         old_files = {}
-        if os.path.exists(hash_file_path):
-            try:
-                with open(hash_file_path, "r", encoding="utf-8") as f:
-                    old_files = json.load(f)
-            except Exception as e:
-                print(f"Error loading old hashes: {e}")
-
-        # So sánh tìm sự thay đổi
-        # 1. Tìm file mới và file bị sửa đổi
-        for path, file_hash in current_files.items():
-            if path not in old_files:
-                changes["added"].append(path)
-            elif old_files[path] != file_hash:
-                changes["modified"].append(path)
-                
-        # 2. Tìm file bị xóa
-        for path in old_files.keys():
-            if path not in current_files:
-                changes["deleted"].append(path)
-
-        # Lưu lại trạng thái hash mới
+        from app.database.postgres_client import postgres_client
+        conn = postgres_client.get_connection()
         try:
-            with open(hash_file_path, "w", encoding="utf-8") as f:
-                json.dump(current_files, f, indent=2, ensure_ascii=False)
+            with conn.cursor() as cursor:
+                # Lấy hoặc tạo thông tin project
+                cursor.execute("SELECT id FROM projects WHERE name = %s", (project_name,))
+                project_row = cursor.fetchone()
+                if project_row:
+                    project_id = project_row[0]
+                else:
+                    cursor.execute("""
+                    INSERT INTO projects (name, owner, repo, branch, local_cache_path, last_commit_sha)
+                    VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                    """, (project_name, owner, repo_name, branch, project_path, last_commit_sha))
+                    project_id = cursor.fetchone()[0]
+
+                # Lấy các file metadata cũ
+                cursor.execute("SELECT file_path, sha256_hash FROM file_metadata WHERE project_id = %s", (project_id,))
+                old_files = {row[0]: row[1].strip() for row in cursor.fetchall()}
+
+                # So sánh tìm sự thay đổi
+                # 1. Tìm file mới và file bị sửa đổi
+                for path, info in current_files.items():
+                    file_hash = info["hash"]
+                    if path not in old_files:
+                        changes["added"].append(path)
+                    elif old_files[path] != file_hash:
+                        changes["modified"].append(path)
+                        
+                # 2. Tìm file bị xóa
+                for path in old_files.keys():
+                    if path not in current_files:
+                        changes["deleted"].append(path)
+
+                # Cập nhật PostgreSQL
+                # Xóa file bị xóa
+                if changes["deleted"]:
+                    cursor.executemany("""
+                    DELETE FROM file_metadata WHERE project_id = %s AND file_path = %s
+                    """, [(project_id, path) for path in changes["deleted"]])
+                
+                # Thêm file mới
+                if changes["added"]:
+                    cursor.executemany("""
+                    INSERT INTO file_metadata (project_id, file_path, sha256_hash, size_bytes, is_indexed)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    """, [(project_id, path, current_files[path]["hash"], current_files[path]["size"]) for path in changes["added"]])
+                
+                # Sửa file
+                if changes["modified"]:
+                    cursor.executemany("""
+                    UPDATE file_metadata 
+                    SET sha256_hash = %s, size_bytes = %s, is_indexed = TRUE, last_sync_at = CURRENT_TIMESTAMP
+                    WHERE project_id = %s AND file_path = %s
+                    """, [(current_files[path]["hash"], current_files[path]["size"], project_id, path) for path in changes["modified"]])
+
+                # Cập nhật thông tin dự án
+                cursor.execute("""
+                UPDATE projects 
+                SET last_commit_sha = %s, local_cache_path = %s, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = %s
+                """, (last_commit_sha, project_path, project_id))
+
+                conn.commit()
         except Exception as e:
-            print(f"Error saving current hashes: {e}")
+            conn.rollback()
+            print(f"Error processing project diff in PostgreSQL: {e}")
+            raise e
+        finally:
+            postgres_client.release_connection(conn)
             
         return changes
 

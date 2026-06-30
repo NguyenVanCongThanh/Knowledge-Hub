@@ -55,18 +55,27 @@ async def ingest_github_project(payload: GithubIngestRequest):
 async def query_knowledge(payload: QueryRequest):
     # Dò tìm path thực tế của project dựa trên cấu hình lưu trữ
     # (Để đọc file gốc trả về text chính xác nếu cần)
-    # Lấy path từ file hash đã lưu
-    hash_file_path = os.path.join(
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "metadata")),
-        f"{payload.project}_hashes.json"
-    )
-    
     project_path = ""
-    # Mặc định lấy từ /data/ nếu chạy trong Docker, hoặc /home/thanh/ nếu chạy local
-    if os.path.exists(f"/data/{payload.project}"):
-        project_path = f"/data/{payload.project}"
-    else:
-        project_path = f"/home/thanh/{payload.project}"
+    # Lấy path từ database
+    from app.database.postgres_client import postgres_client
+    conn = postgres_client.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT local_cache_path FROM projects WHERE name = %s", (payload.project,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                project_path = row[0]
+    except Exception as e:
+        print(f"Error fetching project path from DB: {e}")
+    finally:
+        postgres_client.release_connection(conn)
+
+    if not project_path:
+        # Fallback nếu không tìm thấy trong DB
+        if os.path.exists(f"/data/{payload.project}"):
+            project_path = f"/data/{payload.project}"
+        else:
+            project_path = f"/home/thanh/{payload.project}"
         
     try:
         results = retrieval_service.retrieve(

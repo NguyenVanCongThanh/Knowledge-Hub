@@ -76,8 +76,8 @@
     <!-- Main Content -->
     <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
         
-        <!-- Stats Cards Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <!-- Stats Cards Grid (3 Columns) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
             <!-- Card 1 -->
             <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
                 <div class="space-y-1">
@@ -108,16 +108,6 @@
                     <i class="fa-solid fa-chart-simple text-xl"></i>
                 </div>
             </div>
-            <!-- Card 4 -->
-            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between shadow-xl">
-                <div class="space-y-1">
-                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Chi Phí Tích Lũy</span>
-                    <h3 id="stat-total-cost" class="text-3xl font-bold tracking-tight text-brand-cyan">$0.0000</h3>
-                </div>
-                <div class="p-3 bg-brand-cyan/10 text-brand-cyan rounded-xl">
-                    <i class="fa-solid fa-dollar-sign text-xl"></i>
-                </div>
-            </div>
         </div>
 
         <!-- Charts Row -->
@@ -125,8 +115,12 @@
             <!-- Token Usage History Chart -->
             <div class="glass-panel p-5 rounded-2xl lg:col-span-2 space-y-4">
                 <div class="flex items-center justify-between">
-                    <h2 class="text-base font-semibold tracking-wide text-slate-200">Xu hướng sử dụng Token (7 ngày qua)</h2>
-                    <span class="text-xs text-slate-400"><i class="fa-regular fa-clock mr-1"></i>Cập nhật thời gian thực</span>
+                    <h2 class="text-base font-semibold tracking-wide text-slate-200" id="chart-title">Xu hướng sử dụng Token (7 ngày qua)</h2>
+                    <div class="flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800 text-[10px]">
+                        <button onclick="changeTimeRange('24h')" id="btn-24h" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-colors duration-150 font-medium">24 Giờ</button>
+                        <button onclick="changeTimeRange('7d')" id="btn-7d" class="px-2.5 py-1 rounded-lg bg-brand-purple text-white transition-colors duration-150 font-medium">7 Ngày</button>
+                        <button onclick="changeTimeRange('30d')" id="btn-30d" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-colors duration-150 font-medium">30 Ngày</button>
+                    </div>
                 </div>
                 <div class="h-64 relative">
                     <canvas id="tokenHistoryChart"></canvas>
@@ -134,76 +128,37 @@
             </div>
             <!-- Model Distribution Chart -->
             <div class="glass-panel p-5 rounded-2xl space-y-4">
-                <h2 class="text-base font-semibold tracking-wide text-slate-200">Phân bổ Chi phí theo Model</h2>
+                <h2 class="text-base font-semibold tracking-wide text-slate-200">Phân bổ Token theo Model</h2>
                 <div class="h-64 relative flex items-center justify-center">
                     <canvas id="modelPriceChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- Management Row -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Keys Management Table -->
-            <div class="glass-panel p-5 rounded-2xl lg:col-span-2 space-y-4">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-base font-semibold text-slate-200">Quản lý API Keys</h2>
-                    <button onclick="toggleAddModal(true)" class="px-3.5 py-2 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-brand-purple/20 transition-all duration-200">
-                        <i class="fa-solid fa-plus text-xs"></i> Thêm Key Mới
-                    </button>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800/80 text-xs text-slate-400 uppercase tracking-wider">
-                                <th class="py-3 px-4">Tên gợi nhớ</th>
-                                <th class="py-3 px-4">API Key</th>
-                                <th class="py-3 px-4">Trạng thái</th>
-                                <th class="py-3 px-4 text-right">Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody id="keys-table-body" class="text-sm divide-y divide-slate-800/40">
-                            <!-- JS loaded keys here -->
-                        </tbody>
-                    </table>
-                </div>
+        <!-- Management Row (Full Width Keys Management Table) -->
+        <div class="glass-panel p-5 rounded-2xl space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-base font-semibold text-slate-200">Quản lý API Keys</h2>
+                <button onclick="toggleAddModal(true)" class="px-3.5 py-2 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-brand-purple/20 transition-all duration-200">
+                    <i class="fa-solid fa-plus text-xs"></i> Thêm Key Mới
+                </button>
             </div>
-
-            <!-- Side column - Model Rates Reference -->
-            <div class="glass-panel p-5 rounded-2xl space-y-4">
-                <h2 class="text-base font-semibold text-slate-200">Bảng giá Model Groq (Tham khảo)</h2>
-                <div class="text-xs text-slate-400 pb-2">Đơn giá áp dụng cho 1,000,000 Tokens (USD)</div>
-                <div class="space-y-3 max-h-72 overflow-y-auto pr-1">
-                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
-                        <div>
-                            <div class="font-medium text-slate-300">llama3-70b-8192</div>
-                            <div class="text-[10px] text-slate-500">Mô hình tiêu chuẩn cao</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-slate-300 font-semibold">$0.59 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
-                            <div class="text-slate-400 font-semibold">$0.79 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
-                        <div>
-                            <div class="font-medium text-slate-300">llama3-8b-8192</div>
-                            <div class="text-[10px] text-slate-500">Tốc độ siêu nhanh, nhẹ</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-slate-300 font-semibold">$0.05 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
-                            <div class="text-slate-400 font-semibold">$0.08 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between p-2.5 bg-slate-900/40 border border-slate-800/30 rounded-xl">
-                        <div>
-                            <div class="font-medium text-slate-300">mixtral-8x7b-32768</div>
-                            <div class="text-[10px] text-slate-500">Cửa sổ ngữ cảnh rộng</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-slate-300 font-semibold">$0.24 <span class="text-[10px] font-normal text-slate-500">Input</span></div>
-                            <div class="text-slate-400 font-semibold">$0.24 <span class="text-[10px] font-normal text-slate-500">Output</span></div>
-                        </div>
-                    </div>
-                </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800/80 text-xs text-slate-400 uppercase tracking-wider">
+                            <th class="py-3 px-4">Tên gợi nhớ</th>
+                            <th class="py-3 px-4">API Key</th>
+                            <th class="py-3 px-4">Requests còn lại (RPD)</th>
+                            <th class="py-3 px-4">Tokens còn lại (TPM)</th>
+                            <th class="py-3 px-4">Trạng thái (Kích hoạt)</th>
+                            <th class="py-3 px-4 text-right">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keys-table-body" class="text-sm divide-y divide-slate-800/40">
+                        <!-- JS loaded keys here -->
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -219,8 +174,7 @@
                             <th class="py-3 px-4">Model</th>
                             <th class="py-3 px-4">Prompt Tokens</th>
                             <th class="py-3 px-4">Completion Tokens</th>
-                            <th class="py-3 px-4">Tổng Tokens</th>
-                            <th class="py-3 px-4 text-right">Ước tính Chi Phí</th>
+                            <th class="py-3 px-4 text-right">Tổng Tokens</th>
                         </tr>
                     </thead>
                     <tbody id="logs-table-body" class="text-sm divide-y divide-slate-800/40">
@@ -264,10 +218,35 @@
         </div>
     </div>
 
+    <!-- Verification/Confirm Modal (Custom Popup) -->
+    <div id="confirm-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden z-50 transition-all duration-300">
+        <div class="glass-panel max-w-sm w-full p-6 rounded-2xl space-y-5 shadow-2xl border border-slate-800 animate-in fade-in zoom-in duration-200">
+            <div class="flex items-center gap-3 text-amber-500 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <h3 class="text-base font-bold text-slate-100">Xác nhận thao tác</h3>
+            </div>
+            <p id="confirm-message" class="text-sm text-slate-300 leading-relaxed">Bạn có chắc chắn muốn thực hiện hành động này không?</p>
+            <div class="flex justify-end gap-3 pt-2">
+                <button id="confirm-cancel-btn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 transition-colors text-xs font-semibold rounded-xl text-slate-300">Hủy</button>
+                <button id="confirm-action-btn" class="px-4 py-2 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 transition-opacity text-xs font-semibold rounded-xl text-white">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script>
         let historyChart = null;
         let priceChart = null;
+        
+        // Mốc thời gian mặc định
+        let currentTimeRange = '7d';
+        
+        // Trạng thái cho Confirm Modal
+        let confirmAction = null;
+        let confirmCancelAction = null;
+        
+        // Lưu trữ các active timers đếm ngược cho rate_limited keys
+        const activeTimers = {};
 
         document.addEventListener('DOMContentLoaded', () => {
             loadDashboardData();
@@ -277,14 +256,13 @@
 
         async function loadDashboardData() {
             try {
-                const response = await fetch('/api/groq/usage/summary');
+                const response = await fetch(`/api/groq/usage/summary?range=${currentTimeRange}`);
                 const data = await response.json();
                 
                 // Cập nhật thẻ thống kê
                 document.getElementById('stat-total-keys').innerText = data.total_keys;
                 document.getElementById('stat-active-keys').innerText = data.active_keys;
                 document.getElementById('stat-total-tokens').innerText = data.total_tokens.toLocaleString();
-                document.getElementById('stat-total-cost').innerText = '$' + data.total_cost.toFixed(4);
 
                 // Cập nhật biểu đồ lịch sử sử dụng
                 renderHistoryChart(data.daily_usage);
@@ -293,7 +271,7 @@
                 renderModelChart(data.model_usage);
 
                 // Cập nhật bảng Key
-                loadKeysTable();
+                await loadKeysTable();
 
                 // Cập nhật bảng Log
                 renderLogsTable(data.recent_logs);
@@ -301,6 +279,30 @@
             } catch (error) {
                 console.error("Lỗi khi tải dữ liệu dashboard: ", error);
             }
+        }
+
+        function changeTimeRange(newRange) {
+            currentTimeRange = newRange;
+            
+            // Cập nhật tiêu đề biểu đồ
+            const titleElement = document.getElementById('chart-title');
+            if (newRange === '24h') titleElement.innerText = "Xu hướng sử dụng Token (24 giờ qua)";
+            else if (newRange === '7d') titleElement.innerText = "Xu hướng sử dụng Token (7 ngày qua)";
+            else if (newRange === '30d') titleElement.innerText = "Xu hướng sử dụng Token (30 ngày qua)";
+            
+            // Cập nhật nút active trên UI
+            const ranges = ['24h', '7d', '30d'];
+            ranges.forEach(r => {
+                const btn = document.getElementById(`btn-${r}`);
+                if (r === newRange) {
+                    btn.className = "px-2.5 py-1 rounded-lg bg-brand-purple text-white transition-colors duration-150 font-medium";
+                } else {
+                    btn.className = "px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-colors duration-150 font-medium";
+                }
+            });
+            
+            // Tải lại dữ liệu biểu đồ
+            loadDashboardData();
         }
 
         async function loadKeysTable() {
@@ -313,7 +315,7 @@
                 if (keys.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="4" class="py-8 text-center text-slate-500">Chưa có API Key nào được thêm. Hãy nhấn Thêm Key Mới!</td>
+                            <td colspan="6" class="py-8 text-center text-slate-500">Chưa có API Key nào được thêm. Hãy nhấn Thêm Key Mới!</td>
                         </tr>
                     `;
                     return;
@@ -323,32 +325,181 @@
                     const tr = document.createElement('tr');
                     tr.className = "hover:bg-slate-900/10 transition-colors";
                     
-                    let badgeClass = "bg-brand-blue/10 text-brand-blue border border-brand-blue/20";
-                    if (k.status === 'active') badgeClass = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                    if (k.status === 'rate_limited') badgeClass = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
-                    if (k.status === 'inactive') badgeClass = "bg-slate-800 text-slate-400 border border-slate-700";
-
+                    const isChecked = k.status === 'active';
+                    
+                    // Tính tỷ lệ % còn lại của Requests và Tokens
+                    const reqPercentage = k.limit_requests > 0 ? (k.remaining_requests / k.limit_requests) * 100 : 100;
+                    const tokPercentage = k.limit_tokens > 0 ? (k.remaining_tokens / k.limit_tokens) * 100 : 100;
+                    
                     tr.innerHTML = `
-                        <td class="py-4 px-4 font-semibold text-slate-200">${k.name}</td>
-                        <td class="py-4 px-4 font-mono text-xs text-slate-400">${k.api_key}</td>
-                        <td class="py-4 px-4">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}">
-                                ${k.status}
-                            </span>
+                        <td class="py-4 px-4 font-semibold text-slate-200">
+                            <div class="flex items-center gap-2">
+                                <span>${k.name}</span>
+                                <button onclick="editKeyName(${k.id}, '${k.name.replace(/'/g, "\\'")}')" class="text-slate-500 hover:text-brand-purple transition-colors text-xs" title="Chỉnh sửa tên">
+                                    <i class="fa-solid fa-pencil"></i>
+                                </button>
+                            </div>
                         </td>
-                        <td class="py-4 px-4 text-right space-x-2">
-                            <button onclick="toggleKeyStatus(${k.id}, '${k.status === 'active' ? 'inactive' : 'active'}')" class="text-xs px-2.5 py-1.5 ${k.status === 'active' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'} rounded-lg transition-colors font-medium">
-                                ${k.status === 'active' ? 'Vô hiệu hóa' : 'Kích hoạt'}
-                            </button>
-                            <button onclick="deleteKey(${k.id})" class="text-xs px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors font-medium">
+                        <td class="py-4 px-4 font-mono text-xs text-slate-400">${k.api_key}</td>
+                        
+                        <!-- Requests còn lại (RPD) -->
+                        <td class="py-4 px-4 font-semibold text-slate-300">
+                            ${k.remaining_requests !== null ? k.remaining_requests.toLocaleString() : '<span class="text-xs text-slate-500 italic">Chưa gọi</span>'}
+                        </td>
+                        
+                        <!-- Tokens còn lại (TPM) -->
+                        <td class="py-4 px-4 font-semibold text-slate-300">
+                            ${k.remaining_tokens !== null ? k.remaining_tokens.toLocaleString() : '<span class="text-xs text-slate-500 italic">Chưa gọi</span>'}
+                        </td>
+
+                        <td class="py-4 px-4">
+                            <div class="flex items-center gap-3">
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" ${isChecked ? 'checked' : ''} 
+                                        onchange="handleToggleSwitch(${k.id}, '${k.status}', this)" 
+                                        class="sr-only peer">
+                                    <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white"></div>
+                                </label>
+                                <span id="status-text-${k.id}" class="text-xs font-semibold ${k.status === 'active' ? 'text-emerald-400' : k.status === 'rate_limited' ? 'text-amber-400' : 'text-slate-500'}">
+                                    ${k.status}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="py-4 px-4 text-right">
+                            <button onclick="handleDeleteKey(${k.id})" class="text-xs px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors font-medium">
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
+
+                // Quản lý đếm ngược cooldown thời gian thực cho rate_limited keys
+                keys.forEach(k => {
+                    if (k.status === 'rate_limited' && k.cooldown_until) {
+                        startCooldownTimer(k.id, k.cooldown_until);
+                    }
+                });
             } catch (error) {
                 console.error("Lỗi khi tải bảng keys: ", error);
+            }
+        }
+
+        function startCooldownTimer(keyId, cooldownUntilStr) {
+            if (activeTimers[keyId]) clearInterval(activeTimers[keyId]);
+            
+            const cooldownUntil = new Date(cooldownUntilStr);
+            
+            function updateTimer() {
+                const statusTextSpan = document.getElementById(`status-text-${keyId}`);
+                const now = new Date();
+                const diffMs = cooldownUntil - now;
+                
+                if (diffMs <= 0) {
+                    if (statusTextSpan) {
+                        statusTextSpan.innerText = 'active';
+                        statusTextSpan.className = 'text-xs font-semibold text-emerald-400';
+                    }
+                    clearInterval(activeTimers[keyId]);
+                    delete activeTimers[keyId];
+                } else {
+                    const diffSec = Math.ceil(diffMs / 1000);
+                    if (statusTextSpan) {
+                        statusTextSpan.innerText = `rate_limited (chờ ${diffSec}s)`;
+                        statusTextSpan.className = 'text-xs font-semibold text-amber-400';
+                    }
+                }
+            }
+            
+            updateTimer();
+            activeTimers[keyId] = setInterval(updateTimer, 1000);
+        }
+
+        function showConfirmModal(message, onConfirm, onCancel = null) {
+            document.getElementById('confirm-message').innerText = message;
+            const modal = document.getElementById('confirm-modal');
+            modal.classList.remove('hidden');
+            
+            confirmAction = () => {
+                onConfirm();
+                modal.classList.add('hidden');
+            };
+            
+            confirmCancelAction = () => {
+                if (onCancel) onCancel();
+                modal.classList.add('hidden');
+            };
+            
+            document.getElementById('confirm-action-btn').onclick = confirmAction;
+            document.getElementById('confirm-cancel-btn').onclick = confirmCancelAction;
+        }
+
+        function handleToggleSwitch(id, currentStatus, checkboxElement) {
+            const nextStatus = currentStatus === 'active' ? 'inactive' : 'active';
+            const actionText = nextStatus === 'active' ? 'Kích hoạt' : 'Vô hiệu hóa';
+            
+            showConfirmModal(
+                `Bạn có chắc chắn muốn ${actionText} API Key này?`,
+                async () => {
+                    try {
+                        const response = await fetch(`/api/groq/keys/${id}/status`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: nextStatus })
+                        });
+                        if (response.ok) {
+                            loadDashboardData();
+                        }
+                    } catch (error) {
+                        console.error(error);
+                        checkboxElement.checked = !checkboxElement.checked;
+                    }
+                },
+                () => {
+                    checkboxElement.checked = !checkboxElement.checked;
+                }
+            );
+        }
+
+        function handleDeleteKey(id) {
+            showConfirmModal(
+                "Bạn có chắc chắn muốn XÓA API Key này? Hành động này không thể hoàn tác.",
+                async () => {
+                    try {
+                        const response = await fetch(`/api/groq/keys/${id}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            loadDashboardData();
+                        }
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
+            );
+        }
+
+        async function editKeyName(id, currentName) {
+            const newName = prompt("Nhập tên gợi nhớ mới cho API Key:", currentName);
+            if (newName === null) return;
+            const trimmedName = newName.trim();
+            if (trimmedName === "") {
+                alert("Tên key không được để trống!");
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/groq/keys/${id}/name`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: trimmedName })
+                });
+                if (response.ok) {
+                    loadDashboardData();
+                } else {
+                    const err = await response.json();
+                    alert("Lỗi: " + err.detail);
+                }
+            } catch (error) {
+                alert("Lỗi kết nối server");
             }
         }
 
@@ -359,7 +510,7 @@
             if (logs.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="py-8 text-center text-slate-500">Chưa có hoạt động gọi API nào được ghi nhận.</td>
+                        <td colspan="6" class="py-8 text-center text-slate-500">Chưa có hoạt động gọi API nào được ghi nhận.</td>
                     </tr>
                 `;
                 return;
@@ -376,8 +527,7 @@
                     <td class="py-3 px-4 font-mono text-xs text-brand-purple">${l.model}</td>
                     <td class="py-3 px-4 text-slate-300">${l.prompt_tokens.toLocaleString()}</td>
                     <td class="py-3 px-4 text-slate-300">${l.completion_tokens.toLocaleString()}</td>
-                    <td class="py-3 px-4 font-semibold text-slate-200">${l.total_tokens.toLocaleString()}</td>
-                    <td class="py-3 px-4 text-right font-bold text-brand-cyan">$${l.estimated_cost.toFixed(6)}</td>
+                    <td class="py-3 px-4 text-right font-semibold text-brand-cyan">${l.total_tokens.toLocaleString()}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -414,33 +564,6 @@
                 }
             } catch (error) {
                 alert("Lỗi kết nối server");
-            }
-        }
-
-        async function toggleKeyStatus(id, newStatus) {
-            try {
-                const response = await fetch(`/api/groq/keys/${id}/status`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newStatus })
-                });
-                if (response.ok) {
-                    loadDashboardData();
-                }
-            } catch (error) {
-                console.error(error);
-            }
-        }
-
-        async function deleteKey(id) {
-            if (!confirm("Bạn có chắc chắn muốn xóa API Key này không?")) return;
-            try {
-                const response = await fetch(`/api/groq/keys/${id}`, { method: 'DELETE' });
-                if (response.ok) {
-                    loadDashboardData();
-                }
-            } catch (error) {
-                console.error(error);
             }
         }
 
@@ -496,7 +619,6 @@
             }
 
             if (modelUsage.length === 0) {
-                // Hiển thị đồ thị rỗng khi chưa có data
                 priceChart = new Chart(ctx, {
                     type: 'doughnut',
                     data: {
@@ -517,14 +639,14 @@
             }
 
             const labels = modelUsage.map(m => m.model);
-            const costs = modelUsage.map(m => m.cost);
+            const tokens = modelUsage.map(m => m.tokens);
 
             priceChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
                     datasets: [{
-                        data: costs,
+                        data: tokens,
                         backgroundColor: ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899'],
                         borderWidth: 1,
                         borderColor: 'rgba(15, 23, 42, 0.65)'

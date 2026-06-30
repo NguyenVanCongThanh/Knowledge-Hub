@@ -17,13 +17,18 @@ class IndexerService:
         qdrant_db.delete_project_chunks(project_name)
         neo4j_db.clear_project(project_name)
         
-        # Đường dẫn file hash cũ cũng cần xóa để khởi tạo lại
-        hash_file_path = os.path.join(settings.METADATA_DIR, f"{project_name}_hashes.json")
-        if os.path.exists(hash_file_path):
-            try:
-                os.remove(hash_file_path)
-            except Exception:
-                pass
+        # Dọn dẹp dữ liệu cũ của project này trong PostgreSQL
+        from app.database.postgres_client import postgres_client
+        conn = postgres_client.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM projects WHERE name = %s", (project_name,))
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Error clearing old project metadata in PostgreSQL: {e}")
+        finally:
+            postgres_client.release_connection(conn)
                 
         # Khởi tạo node project
         neo4j_db.ensure_project_node(project_name)

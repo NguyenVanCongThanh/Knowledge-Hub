@@ -85,3 +85,32 @@ def test_parse_markdown_docs(temp_markdown_file):
     assert "Calculator Project Specification" in headings
     assert "Addition Feature" in headings
     assert "Subtraction Feature" in headings
+
+def test_parse_pdf_with_markitdown(monkeypatch):
+    class MockResult:
+        text_content = """# PDF Title
+Some content under title.
+## Section 1
+Content under section 1.
+"""
+
+    class MockMarkItDown:
+        def convert(self, file_path):
+            return MockResult()
+
+    # Mock the import inside _parse_pdf
+    import sys
+    from types import ModuleType
+    
+    mock_markitdown_module = ModuleType("markitdown")
+    mock_markitdown_module.MarkItDown = MockMarkItDown
+    sys.modules["markitdown"] = mock_markitdown_module
+
+    # Test PDF parsing with MarkItDown mock
+    result = parser_service.parse_file("dummy.pdf")
+    
+    assert result["type"] == "document"
+    assert len(result["chunks"]) >= 2
+    headings = [chunk["heading"] for chunk in result["chunks"]]
+    assert "PDF Title" in headings
+    assert "Section 1" in headings

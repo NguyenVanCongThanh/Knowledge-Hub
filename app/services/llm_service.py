@@ -60,6 +60,13 @@ class LLMService:
                 "temperature": 0.1
             }
 
+            # Đo lường số key active để tính delay interval động chống quá tải RPM
+            active_count = groq_manager.get_active_key_count()
+            if active_count > 0:
+                # RPM giới hạn của 1 key là 30. Hệ số an toàn 1.15 => Khoảng trễ tối thiểu
+                delay_interval = (60.0 / (active_count * 30.0)) * 1.15
+                await asyncio.sleep(delay_interval)
+
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(self.api_url, headers=headers, json=payload)
@@ -77,16 +84,46 @@ class LLMService:
                         # Ghi nhận log token vào Database
                         groq_manager.log_usage(key_id, self.model, prompt_tokens, completion_tokens)
                         
+                        # Cập nhật Rate Limit headers (remaining, limit) của key vào Database
+                        try:
+                            rem_req = response.headers.get("x-ratelimit-remaining-requests")
+                            lim_req = response.headers.get("x-ratelimit-limit-requests")
+                            rem_tok = response.headers.get("x-ratelimit-remaining-tokens")
+                            lim_tok = response.headers.get("x-ratelimit-limit-tokens")
+                            if rem_req and lim_req and rem_tok and lim_tok:
+                                groq_manager.update_key_limits(
+                                    key_id, 
+                                    int(rem_req), 
+                                    int(lim_req), 
+                                    int(rem_tok), 
+                                    int(lim_tok),
+                                    api_key=api_key
+                                )
+                        except Exception as limit_err:
+                            print(f"Lỗi cập nhật rate limit headers: {limit_err}")
+                        
                         print(f"🔑 [Key: {api_key[:12]}...] model: {self.model} | Prompt: {prompt_tokens} tkn | Completion: {completion_tokens} tkn | Total: {total_tokens} tkn")
                         
                         return json.loads(content)
                     
                     elif response.status_code == 429:
-                        # Rate limit hit: đưa key vào trạng thái cooldown và rate_limited
-                        self._cooldown_key(api_key, duration=30.0)
+                        # Đọc số giây chờ reset từ header của Groq
+                        retry_after_str = response.headers.get("retry-after")
+                        cooldown_duration = 30.0
+                        if retry_after_str and retry_after_str.isdigit():
+                            cooldown_duration = float(retry_after_str)
+                        else:
+                            reset_requests = response.headers.get("x-ratelimit-reset-requests")
+                            if reset_requests:
+                                if "ms" in reset_requests:
+                                    cooldown_duration = float(reset_requests.replace("ms", "")) / 1000.0
+                                elif "s" in reset_requests:
+                                    cooldown_duration = float(reset_requests.replace("s", ""))
+                        
+                        self._cooldown_key(api_key, duration=cooldown_duration)
                         if key_id is not None:
-                            groq_manager.update_key_status(key_id, "rate_limited")
-                        print(f"Groq API Rate Limit (429) hit on key {api_key[:12]}... Attempt {attempt + 1}/{retries}. Retrying with another key...")
+                            groq_manager.set_key_cooldown(key_id, int(cooldown_duration))
+                        print(f"Groq API Rate Limit (429) hit on key {api_key[:12]}... Cooldown for {cooldown_duration}s. Attempt {attempt + 1}/{retries}. Retrying...")
                         await asyncio.sleep(1.0)
                     else:
                         print(f"Groq API error HTTP {response.status_code}: {response.text}")

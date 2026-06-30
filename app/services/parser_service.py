@@ -102,7 +102,22 @@ class ParserService:
         }
 
     def _parse_pdf(self, file_path: str) -> Dict[str, Any]:
-        """Phân tích file PDF thành các chunks theo từng trang"""
+        """Phân tích file PDF thành các chunks theo cấu trúc hoặc theo từng trang (fallback)"""
+        try:
+            from markitdown import MarkItDown
+            md_converter = MarkItDown()
+            result = md_converter.convert(file_path)
+            md_content = result.text_content
+            
+            if md_content and md_content.strip():
+                # Tái sử dụng bộ parser markdown để chia nhỏ theo heading
+                parsed = self._parse_markdown(md_content, file_path)
+                if parsed.get("chunks"):
+                    return parsed
+        except Exception as e:
+            print(f"Error parsing PDF with MarkItDown: {e}. Falling back to pypdf...")
+
+        # Fallback về pypdf theo trang như cũ
         chunks = []
         try:
             reader = PdfReader(file_path)
