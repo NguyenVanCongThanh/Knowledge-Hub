@@ -14,9 +14,29 @@ class GithubIngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     project_name: str
     status: str
-    indexed_files_count: int
-    chunks_count: int
-    commits_indexed: int
+    indexed_files_count: Optional[int] = None
+    chunks_count: Optional[int] = None
+    commits_indexed: Optional[int] = None
+
+class ProgressResponse(BaseModel):
+    project_name: str
+    job_type: str
+    status: str
+    stage: str
+    stage_text: str
+    total_files: int
+    processed_files: int
+    current_file: Optional[str] = None
+    total_chunks: int
+    processed_chunks: int
+    error_message: Optional[str] = None
+    progress_pct: float
+    started_at: float
+    updated_at: float
+    indexed_files_count: Optional[int] = None
+    chunks_count: Optional[int] = None
+    commits_indexed: Optional[int] = None
+
 
 class QueryRequest(BaseModel):
     project: str = Field(..., json_schema_extra={"example": "bookstore"}, description="Tên định danh dự án cần truy vấn")

@@ -9,142 +9,227 @@ from app.services.parser_service import parser_service
 from app.services.embedding_service import embedding_service
 from app.services.git_service import git_service
 from app.services.extraction_orchestrator import extraction_orchestrator
+from app.services.progress_service import progress_service
 
 class IndexerService:
     async def ingest_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
         """Thực hiện nạp dữ liệu toàn bộ project lần đầu (Full Index)"""
-        # 1. Dọn dẹp dữ liệu cũ của project này
-        qdrant_db.delete_project_chunks(project_name)
-        neo4j_db.clear_project(project_name)
+        progress_service.clear_cancel(project_name)
         
-        # Dọn dẹp dữ liệu cũ của project này trong PostgreSQL
-        from app.database.postgres_client import postgres_client
-        conn = postgres_client.get_connection()
+        def rollback_changes():
+            print(f"Rolling back ingestion for project: {project_name}")
+            try:
+                qdrant_db.delete_project_chunks(project_name)
+            except Exception as e:
+                print(f"Error rolling back Qdrant: {e}")
+            try:
+                neo4j_db.clear_project(project_name)
+            except Exception as e:
+                print(f"Error rolling back Neo4j: {e}")
+            
+            # Dọn dẹp metadata trong PostgreSQL
+            from app.database.postgres_client import postgres_client
+            conn = postgres_client.get_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM projects WHERE name = %s", (project_name,))
+                    conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"Error rolling back PostgreSQL: {e}")
+            finally:
+                postgres_client.release_connection(conn)
+
         try:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM projects WHERE name = %s", (project_name,))
-                conn.commit()
-        except Exception as e:
-            conn.rollback()
-            print(f"Error clearing old project metadata in PostgreSQL: {e}")
-        finally:
-            postgres_client.release_connection(conn)
-                
-        # Khởi tạo node project
-        neo4j_db.ensure_project_node(project_name)
-        
-        # 2. Thu thập và phân loại toàn bộ file trong project
-        indexed_files = []
-        all_parsed_data = {}
-        all_chunks_to_upsert = []
-        
-        # Quét dự án bằng git_service để khởi tạo hash file
-        diff = git_service.get_project_diff(project_name, project_path)
-        all_files = diff["added"] + diff["modified"]
-        
-        # 3. Parse từng file và chuẩn bị embeddings
-        for rel_path in all_files:
-            abs_path = os.path.join(project_path, rel_path)
-            if not os.path.exists(abs_path):
-                continue
-                
-            file_hash = git_service._calculate_file_hash(abs_path)
-            parsed = parser_service.parse_file(abs_path)
-            parsed["file_hash"] = file_hash
-            parsed["rel_path"] = rel_path
+            # 1. Dọn dẹp dữ liệu cũ của project này
+            progress_service.update_job(project_name, stage="diffing", stage_text="Đang dọn dẹp dữ liệu cũ của project...")
+            qdrant_db.delete_project_chunks(project_name)
+            neo4j_db.clear_project(project_name)
             
-            all_parsed_data[rel_path] = parsed
-            indexed_files.append(rel_path)
-            
-            # Ghi node File vào Neo4j
-            neo4j_db.create_file_node(
-                project_name=project_name, 
-                file_path=rel_path, 
-                file_hash=file_hash, 
-                file_type=parsed["type"]
-            )
-            
-            # Tạo các class/function/chunk nodes trong Neo4j
-            if parsed["type"] == "code":
-                for cls in parsed["classes"]:
-                    neo4j_db.create_class_node(project_name, rel_path, cls["name"])
-                for func in parsed["functions"]:
-                    neo4j_db.create_function_node(
-                        project_name=project_name,
-                        file_path=rel_path,
-                        func_name=func["name"],
-                        class_name=func["class_name"],
-                        start_line=func["start_line"],
-                        end_line=func["end_line"]
-                    )
-            elif parsed["type"] == "document":
-                for idx, chunk in enumerate(parsed["chunks"]):
-                    # Sinh UUID v5 hợp lệ cho point id của Qdrant
-                    namespace = uuid.NAMESPACE_URL
-                    name_key = f"{project_name}:{rel_path}:chunk:{idx}"
-                    chunk_id = str(uuid.uuid5(namespace, name_key))
+            # Dọn dẹp dữ liệu cũ của project này trong PostgreSQL
+            from app.database.postgres_client import postgres_client
+            conn = postgres_client.get_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM projects WHERE name = %s", (project_name,))
+                    conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"Error clearing old project metadata in PostgreSQL: {e}")
+            finally:
+                postgres_client.release_connection(conn)
                     
-                    heading = chunk.get("heading", f"Section {idx}")
-                    neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
-                    chunk["id"] = chunk_id  # Gán ID phục vụ vector mapping
+            # Khởi tạo node project
+            neo4j_db.ensure_project_node(project_name)
             
-            # Trích xuất tri thức bằng LLM (Groq) bất đồng bộ cho file hiện tại
-            if parsed["chunks"]:
-                await extraction_orchestrator.process_project_chunks(project_name, rel_path, parsed["chunks"])
+            # 2. Thu thập và phân loại toàn bộ file trong project
+            progress_service.update_job(project_name, stage="diffing", stage_text="Đang quét cấu trúc thư mục & phân tích git diff...")
+            indexed_files = []
+            all_parsed_data = {}
+            all_chunks_to_upsert = []
             
-            # Chuẩn bị dữ liệu để sinh vector
-            texts = [c["text"] for c in parsed["chunks"]]
-            if texts:
-                vectors = embedding_service.get_embeddings(texts)
-                for chunk, vector in zip(parsed["chunks"], vectors):
-                    payload = {
-                        "file_path": rel_path,
-                        "text": chunk["text"],
-                        "type": chunk["type"],
-                        "start_line": chunk.get("start_line", 0),
-                        "end_line": chunk.get("end_line", 0),
-                    }
-                    if "heading" in chunk:
-                        payload["heading"] = chunk["heading"]
-                    if "name" in chunk:
-                        payload["name"] = chunk["name"]
-                    if "entity_type" in chunk:
-                        payload["entity_type"] = chunk["entity_type"]
+            # Quét dự án bằng git_service để khởi tạo hash file
+            diff = git_service.get_project_diff(project_name, project_path)
+            all_files = diff["added"] + diff["modified"]
+            
+            total_files = len(all_files)
+            progress_service.update_job(project_name, stage="parsing", stage_text=f"Bắt đầu phân tích cú pháp {total_files} files...", total_files=total_files, processed_files=0)
+            
+            # 3. Parse từng file và chuẩn bị embeddings
+            for file_idx, rel_path in enumerate(all_files):
+                if progress_service.is_cancelled(project_name):
+                    raise Exception("Yêu cầu hủy từ người dùng")
+                    
+                abs_path = os.path.join(project_path, rel_path)
+                if not os.path.exists(abs_path):
+                    continue
+                    
+                progress_service.update_job(
+                    project_name, 
+                    stage="parsing", 
+                    stage_text=f"Đang phân tích ({file_idx + 1}/{total_files}): {rel_path}", 
+                    processed_files=file_idx,
+                    current_file=rel_path
+                )
+                
+                file_hash = git_service._calculate_file_hash(abs_path)
+                parsed = parser_service.parse_file(abs_path)
+                parsed["file_hash"] = file_hash
+                parsed["rel_path"] = rel_path
+                
+                all_parsed_data[rel_path] = parsed
+                indexed_files.append(rel_path)
+                
+                # Ghi node File vào Neo4j
+                neo4j_db.create_file_node(
+                    project_name=project_name, 
+                    file_path=rel_path, 
+                    file_hash=file_hash, 
+                    file_type=parsed["type"]
+                )
+                
+                # Tạo các class/function/chunk nodes trong Neo4j
+                if parsed["type"] == "code":
+                    for cls in parsed["classes"]:
+                        neo4j_db.create_class_node(project_name, rel_path, cls["name"])
+                    for func in parsed["functions"]:
+                        neo4j_db.create_function_node(
+                            project_name=project_name,
+                            file_path=rel_path,
+                            func_name=func["name"],
+                            class_name=func["class_name"],
+                            start_line=func["start_line"],
+                            end_line=func["end_line"]
+                        )
+                elif parsed["type"] == "document":
+                    for idx, chunk in enumerate(parsed["chunks"]):
+                        # Sinh UUID v5 hợp lệ cho point id của Qdrant
+                        namespace = uuid.NAMESPACE_URL
+                        name_key = f"{project_name}:{rel_path}:chunk:{idx}"
+                        chunk_id = str(uuid.uuid5(namespace, name_key))
                         
-                    all_chunks_to_upsert.append({
-                        "id": chunk.get("id"),
-                        "vector": vector,
-                        "payload": payload
-                    })
+                        heading = chunk.get("heading", f"Section {idx}")
+                        neo4j_db.create_document_chunk_node(project_name, rel_path, chunk_id, heading)
+                        chunk["id"] = chunk_id  # Gán ID phục vụ vector mapping
+                
+                # Trích xuất tri thức bằng LLM (Groq) bất đồng bộ cho file hiện tại
+                if parsed["chunks"]:
+                    progress_service.update_job(
+                        project_name,
+                        stage="extracting",
+                        stage_text=f"Đang trích xuất tri thức LLM cho file: {rel_path}"
+                    )
+                    await extraction_orchestrator.process_project_chunks(project_name, rel_path, parsed["chunks"])
+                
+                # Chuẩn bị dữ liệu để sinh vector
+                texts = [c["text"] for c in parsed["chunks"]]
+                if texts:
+                    vectors = embedding_service.get_embeddings(texts)
+                    for chunk, vector in zip(parsed["chunks"], vectors):
+                        payload = {
+                          "file_path": rel_path,
+                          "text": chunk["text"],
+                          "type": chunk["type"],
+                          "start_line": chunk.get("start_line", 0),
+                          "end_line": chunk.get("end_line", 0),
+                        }
+                        if "heading" in chunk:
+                            payload["heading"] = chunk["heading"]
+                        if "name" in chunk:
+                            payload["name"] = chunk["name"]
+                        if "entity_type" in chunk:
+                            payload["entity_type"] = chunk["entity_type"]
+                            
+                        all_chunks_to_upsert.append({
+                            "id": chunk.get("id"),
+                            "vector": vector,
+                            "payload": payload
+                        })
 
-        # 4. Upsert vectors vào Qdrant
-        if all_chunks_to_upsert:
-            qdrant_db.upsert_chunks(project_name, all_chunks_to_upsert)
+            if progress_service.is_cancelled(project_name):
+                raise Exception("Yêu cầu hủy từ người dùng")
 
-        # 5. Xây dựng các mối quan hệ (CALLS, IMPLEMENTS)
-        self._build_relations(project_name, all_parsed_data)
-        
-        # 6. Index lịch sử Git commits
-        commits = git_service.get_commits(project_path, limit=20)
-        for commit in commits:
-            # Lọc các file bị ảnh hưởng mà có trong dự án đã index
-            modified_in_project = [f for f in commit["modified_files"] if f in indexed_files]
-            neo4j_db.create_commit_node(
-                project_name=project_name,
-                commit_hash=commit["hash"],
-                message=commit["message"],
-                author=commit["author"],
-                date=float(commit["date"]),
-                modified_files=modified_in_project
-            )
+            # Cập nhật khi kết thúc phần lặp file
+            progress_service.update_job(project_name, processed_files=total_files)
+
+            # 4. Upsert vectors vào Qdrant
+            if all_chunks_to_upsert:
+                progress_service.update_job(
+                    project_name, 
+                    stage="embedding", 
+                    stage_text=f"Đang nạp {len(all_chunks_to_upsert)} vector chunks vào Qdrant...",
+                    total_chunks=len(all_chunks_to_upsert),
+                    processed_chunks=0
+                )
+                qdrant_db.upsert_chunks(project_name, all_chunks_to_upsert)
+                progress_service.update_job(project_name, processed_chunks=len(all_chunks_to_upsert))
+     
+            if progress_service.is_cancelled(project_name):
+                raise Exception("Yêu cầu hủy từ người dùng")
+
+            # 5. Xây dựng các mối quan hệ (CALLS, IMPLEMENTS)
+            progress_service.update_job(project_name, stage="finalizing", stage_text="Đang xây dựng liên kết đồ thị (CALLS, IMPLEMENTS)...")
+            self._build_relations(project_name, all_parsed_data)
             
-        return {
-            "project_name": project_name,
-            "status": "success",
-            "indexed_files_count": len(indexed_files),
-            "chunks_count": len(all_chunks_to_upsert),
-            "commits_indexed": len(commits)
-        }
+            if progress_service.is_cancelled(project_name):
+                raise Exception("Yêu cầu hủy từ người dùng")
+
+            # 6. Index lịch sử Git commits
+            progress_service.update_job(project_name, stage="finalizing", stage_text="Đang index lịch sử git commits...")
+            commits = git_service.get_commits(project_path, limit=20)
+            for commit in commits:
+                # Lọc các file bị ảnh hưởng mà có trong dự án đã index
+                modified_in_project = [f for f in commit["modified_files"] if f in indexed_files]
+                neo4j_db.create_commit_node(
+                    project_name=project_name,
+                    commit_hash=commit["hash"],
+                    message=commit["message"],
+                    author=commit["author"],
+                    date=float(commit["date"]),
+                    modified_files=modified_in_project
+                )
+                
+            progress_service.complete_job(
+                project_name=project_name,
+                indexed_files_count=len(indexed_files),
+                chunks_count=len(all_chunks_to_upsert),
+                commits_indexed=len(commits)
+            )
+            return {
+                "project_name": project_name,
+                "status": "success",
+                "indexed_files_count": len(indexed_files),
+                "chunks_count": len(all_chunks_to_upsert),
+                "commits_indexed": len(commits)
+            }
+        except Exception as e:
+            rollback_changes()
+            err_msg = str(e)
+            if "Yêu cầu hủy từ người dùng" in err_msg:
+                progress_service.fail_job(project_name, "Đã bị hủy bởi người dùng và hoàn tác dữ liệu thành công")
+            else:
+                progress_service.fail_job(project_name, f"Lỗi: {err_msg} (đã khôi phục dữ liệu)")
+            raise e
 
     async def sync_project(self, project_name: str, project_path: str) -> Dict[str, Any]:
         """Cơ chế cập nhật tri thức tự động (Sync/Eviction)"""
@@ -280,6 +365,7 @@ class IndexerService:
             clone_url = f"https://{token}@{clean_url}"
             
         if os.path.exists(local_path):
+            progress_service.update_job(project_name, stage="cloning", stage_text=f"Thư mục đã tồn tại. Đang cập nhật (pull) các thay đổi mới nhất cho branch: {branch}...")
             print(f"Directory {local_path} already exists. Pulling latest changes...")
             try:
                 repo = git.Repo(local_path)
@@ -291,9 +377,11 @@ class IndexerService:
                 origin.pull()
             except Exception as e:
                 print(f"Error pulling repository: {e}. Re-cloning...")
+                progress_service.update_job(project_name, stage="cloning", stage_text=f"Có lỗi khi pull. Tiến hành clone lại kho lưu trữ...")
                 shutil.rmtree(local_path)
                 git.Repo.clone_from(clone_url, local_path, branch=branch)
         else:
+            progress_service.update_job(project_name, stage="cloning", stage_text=f"Đang tiến hành clone repository GitHub: {github_url} (branch: {branch})...")
             print(f"Cloning {github_url} (branch: {branch}) into {local_path}...")
             git.Repo.clone_from(clone_url, local_path, branch=branch)
             

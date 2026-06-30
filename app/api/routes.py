@@ -1,28 +1,38 @@
 import os
-from fastapi import APIRouter, HTTPException, Path, Query
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks
 from app.api.schemas import (
     IngestRequest, IngestResponse,
     QueryRequest, QueryResponse,
     SyncRequest, SyncResponse,
-    GithubIngestRequest
+    GithubIngestRequest, ProgressResponse
 )
 from app.services.indexer_service import indexer_service
 from app.services.retrieval_service import retrieval_service
 from app.database.neo4j_client import neo4j_db
+from app.services.progress_service import progress_service
 from app.api.groq_routes import router as groq_router
 
 router = APIRouter()
 router.include_router(groq_router)
 
 
+async def run_ingest_project_bg(project_name: str, project_path: str):
+    try:
+        await indexer_service.ingest_project(project_name, project_path)
+    except Exception as e:
+        progress_service.fail_job(project_name, str(e))
+
+async def run_ingest_github_bg(project_name: str, github_url: str, branch: str, token: Optional[str]):
+    try:
+        await indexer_service.ingest_github_repo(project_name, github_url, branch, token)
+    except Exception as e:
+        progress_service.fail_job(project_name, str(e))
+
 @router.post("/ingest", response_model=IngestResponse, summary="Nạp dữ liệu toàn bộ project")
-async def ingest_project(payload: IngestRequest):
-    # Chuẩn hóa path: Nếu chạy trong Docker, /home/thanh được map vào /data
-    # Nên nếu user truyền /home/thanh/abc, ta có thể đổi thành /data/abc
-    # Hãy tự động chuẩn hóa để dễ dùng ở cả máy thật và Docker container
+async def ingest_project(payload: IngestRequest, background_tasks: BackgroundTasks):
     project_path = payload.path
     if not os.path.exists(project_path):
-        # Hãy thử chuyển đổi /home/thanh sang /data nếu đang chạy trong Docker
         docker_path = project_path.replace("/home/thanh", "/data")
         if os.path.exists(docker_path):
             project_path = docker_path
@@ -33,23 +43,52 @@ async def ingest_project(payload: IngestRequest):
             )
             
     try:
-        result = await indexer_service.ingest_project(payload.project_name, project_path)
-        return result
+        progress_service.start_job(payload.project_name, "local_ingest")
+        background_tasks.add_task(run_ingest_project_bg, payload.project_name, project_path)
+        return {
+            "project_name": payload.project_name,
+            "status": "processing"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi xảy ra trong quá trình nạp dữ liệu: {str(e)}")
+        progress_service.fail_job(payload.project_name, str(e))
+        raise HTTPException(status_code=500, detail=f"Lỗi xảy ra khi bắt đầu nạp dữ liệu: {str(e)}")
 
 @router.post("/ingest/github", response_model=IngestResponse, summary="Nạp dữ liệu từ GitHub repository")
-async def ingest_github_project(payload: GithubIngestRequest):
+async def ingest_github_project(payload: GithubIngestRequest, background_tasks: BackgroundTasks):
     try:
-        result = await indexer_service.ingest_github_repo(
-            project_name=payload.project_name,
-            github_url=payload.github_url,
-            branch=payload.branch,
-            token=payload.token
+        progress_service.start_job(payload.project_name, "github_ingest")
+        background_tasks.add_task(
+            run_ingest_github_bg, 
+            payload.project_name,
+            payload.github_url,
+            payload.branch,
+            payload.token
         )
-        return result
+        return {
+            "project_name": payload.project_name,
+            "status": "processing"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi xảy ra trong quá trình nạp dữ liệu từ GitHub: {str(e)}")
+        progress_service.fail_job(payload.project_name, str(e))
+        raise HTTPException(status_code=500, detail=f"Lỗi xảy ra khi bắt đầu nạp dữ liệu từ GitHub: {str(e)}")
+
+@router.get("/ingest/status/{project_name}", response_model=ProgressResponse, summary="Lấy trạng thái tiến trình nạp dữ liệu")
+async def get_ingest_status(project_name: str = Path(..., description="Tên định danh dự án")):
+    job = progress_service.get_job(project_name)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy tiến trình nào cho dự án '{project_name}'")
+    return job
+
+@router.post("/ingest/cancel/{project_name}", summary="Yêu cầu hủy và khôi phục tiến trình nạp dữ liệu")
+async def cancel_ingestion(project_name: str = Path(..., description="Tên định danh dự án")):
+    job = progress_service.get_job(project_name)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy tiến trình nào đang chạy cho dự án '{project_name}'")
+    if job.get("status") != "running":
+        raise HTTPException(status_code=400, detail=f"Tiến trình của dự án '{project_name}' không ở trạng thái đang chạy (status is {job.get('status')})")
+    
+    progress_service.request_cancel(project_name)
+    return {"message": f"Yêu cầu hủy tiến trình nạp của '{project_name}' đã được ghi nhận. Hệ thống đang tiến hành rollback..."}
 
 @router.post("/query", response_model=QueryResponse, summary="AI Agent truy vấn tri thức")
 async def query_knowledge(payload: QueryRequest):
